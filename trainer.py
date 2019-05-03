@@ -16,6 +16,14 @@ import numpy as np
 import tensorflow.contrib.slim as slim
 import tensorflow as tf
 
+from tensorflow.python.client import device_lib
+os.environ["CUDA_VISIBLE_DEVICES"] = "0"
+
+def get_available_gpus():
+    local_device_protos = device_lib.list_local_devices()
+    return [x.name for x in local_device_protos if x.device_type == 'GPU']
+
+get_available_gpus()
 
 class Trainer(object):
     def __init__(self,
@@ -27,7 +35,7 @@ class Trainer(object):
             config.dataset, config.learning_rate,
             config.batch_size, config.norm_type
         )
-        self.train_dir = './train_dir/%s-%s-%s' % (
+        self.train_dir = './train_dir/{}/{}-{}'.format(
             config.prefix,
             hyper_parameter_str,
             time.strftime("%Y%m%d-%H%M%S")
@@ -127,14 +135,21 @@ class Trainer(object):
             allow_soft_placement=True,
             gpu_options=tf.GPUOptions(allow_growth=True),
             device_count={'GPU': 1},
+            log_device_placement=True
         )
         self.session = self.supervisor.prepare_or_wait_for_session(config=session_config)
 
         self.ckpt_path = config.checkpoint
         if self.ckpt_path is not None:
+            if os.path.isdir(self.ckpt_path):
+                self.ckpt_path = tf.train.latest_checkpoint(self.ckpt_path) #os.path.join(self.ckpt_path, "checkpoint")
             log.info("Checkpoint path: %s", self.ckpt_path)
-            self.pretrain_saver.restore(self.session, self.ckpt_path)
-            log.info("Loaded the pretrain parameters from the provided checkpoint path")
+            try:
+                self.pretrain_saver.restore(self.session, self.ckpt_path)
+                log.info("Loaded the pretrain parameters from the provided checkpoint path")
+            except Exception as e:
+                log.info(e)
+                log.info("Couldn't load pretained model!!!")
 
     def train(self):
         log.infov("Training Starts!")
@@ -225,9 +240,11 @@ class Trainer(object):
                          )
                )
 
-
-def main():
+def main(args=None):
     import argparse
+
+    tf.reset_default_graph()
+
     parser = argparse.ArgumentParser()
     parser.add_argument('--batch_size', type=int, default=64)
     parser.add_argument('--max_batch_size', type=int, default=64)
@@ -238,7 +255,7 @@ def main():
                         choices=['MNIST', 'Fashion', 'SVHN',
                                  'CIFAR10', 'ImageNet', 'TinyImageNet'])
     parser.add_argument('--norm_type', type=str, default='batch',
-                        choices=['batch', 'group'])
+                        choices=['batch', 'group', 'batch_skew', 'batch_mine'])
     # Log
     parser.add_argument('--max_training_step', type=int, default=100000)
     parser.add_argument('--log_step', type=int, default=10)
@@ -248,8 +265,14 @@ def main():
     # Learning
     parser.add_argument('--learning_rate', type=float, default=1e-5)
     parser.add_argument('--no_adjust_learning_rate', action='store_true', default=False)
-    config = parser.parse_args()
 
+    if not args is None:
+        import shlex
+        config = parser.parse_args(shlex.split(args))
+        print(config)
+    else:
+        config = parser.parse_args()
+        print(config)
 
     if config.dataset == 'MNIST':
         import datasets.mnist as dataset
@@ -275,6 +298,7 @@ def main():
 
     log.warning("dataset: %s, learning_rate: %f", config.dataset, config.learning_rate)
     trainer.train()
+    del trainer
 
 if __name__ == '__main__':
     main()

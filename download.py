@@ -6,11 +6,9 @@ import argparse
 import h5py
 import numpy as np
 
-
 parser = argparse.ArgumentParser(description='Download datasets.')
 parser.add_argument('--datasets', metavar='N', type=str, nargs='+',
                     choices=['MNIST', 'Fashion', 'SVHN', 'CIFAR10'])
-
 
 def prepare_h5py(train_image, train_label, test_image,
                  test_label, data_dir, num_class=10, shape=None):
@@ -146,9 +144,9 @@ def download_cifar10(download_path):
 
     # cifar file loader
     def unpickle(file):
-        import cPickle
+        import _pickle as cPickle
         with open(file, 'rb') as fo:
-            dict = cPickle.load(fo)
+            dict = cPickle.load(fo, encoding='latin1')
         return dict
 
     if check_file(data_dir):

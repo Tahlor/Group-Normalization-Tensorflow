@@ -3,7 +3,7 @@ import tensorflow.contrib.slim as slim
 from util import log
 
 
-def norm(x, norm_type, is_train, G=32, esp=1e-5):
+def norm(x, norm_type, is_train, G=32, eps=1e-5):
     with tf.variable_scope('{}_norm'.format(norm_type)):
         if norm_type == 'none':
             output = x
@@ -20,7 +20,7 @@ def norm(x, norm_type, is_train, G=32, esp=1e-5):
             G = min(G, C)
             x = tf.reshape(x, [-1, G, C // G, H, W])
             mean, var = tf.nn.moments(x, [2, 3, 4], keep_dims=True)
-            x = (x - mean) / tf.sqrt(var + esp)
+            x = (x - mean) / tf.sqrt(var + eps)
             # per channel gamma and beta
             gamma = tf.Variable(tf.constant(1.0, shape=[C]), dtype=tf.float32, name='gamma')
             beta = tf.Variable(tf.constant(0.0, shape=[C]), dtype=tf.float32, name='beta')
@@ -28,8 +28,57 @@ def norm(x, norm_type, is_train, G=32, esp=1e-5):
             beta = tf.reshape(beta, [1, C, 1, 1])
 
             output = tf.reshape(x, [-1, C, H, W]) * gamma + beta
+
             # tranpose: [bs, c, h, w, c] to [bs, h, w, c] following the paper
             output = tf.transpose(output, [0, 2, 3, 1])
+
+        elif norm_type == 'batch_mine':
+            N, H, W, C = x.get_shape().as_list()
+
+            batch_mean1, batch_var1 = tf.nn.moments(x, [0])
+
+            # Apply the initial batch normalizing transform
+            z1_hat = (x - batch_mean1) / tf.sqrt(batch_var1 + eps)
+
+            # Create two new parameters, scale and beta (shift)
+            gamma = tf.Variable(tf.ones([C]), dtype=tf.float32, name='gamma')
+            beta = tf.Variable(tf.zeros([C]), dtype=tf.float32, name='beta')
+
+            # Scale and shift to obtain the final output of the batch normalization
+            output = gamma * z1_hat + beta
+
+        elif norm_type == 'batch_skew':
+            N, H, W, C = x.get_shape().as_list()
+
+            batch_mean1, batch_var1 = tf.nn.moments(x, [0])
+
+            # Apply the initial batch normalizing transform
+            z1_hat = (x - batch_mean1) / tf.sqrt(batch_var1 + eps)
+
+            # Create two new parameters, scale and beta (shift)
+            gamma1 = tf.Variable(tf.ones(C), dtype=tf.float32, name='gamma1')
+            gamma2 = tf.Variable(tf.ones([C]), dtype=tf.float32, name='gamma2')
+            beta = tf.Variable(tf.zeros([C]), dtype=tf.float32, name='beta')
+
+            print([*z1_hat.shape[:-1] , 1])
+            print(gamma1.shape)
+
+            ## Get tile to work later
+            # tile1 = tf.tile(gamma1, [64,16,16,1] )
+            # tile2 = tf.tile(gamma2, *z1_hat.shape[:-1] , 1 )
+
+            ones = tf.ones_like(z1_hat)
+            tile1 = gamma1 * ones
+            tile2 = gamma2 * ones
+
+            combined_gamma = tf.where(tf.less_equal(z1_hat,0), tile1, tile2) # # of matches, # of axes
+
+            gamma_diff = gamma2 - gamma1
+            # Scale and shift to obtain the final output of the batch normalization
+            # this value is fed into the activation function (here a sigmoid)
+
+            output = combined_gamma * z1_hat + beta
+
         else:
             raise NotImplementedError
     return output
@@ -76,7 +125,7 @@ def conv2d(input, output_shape, is_train, info=False,
 
 def fc(input, output_shape, is_train, info=False,
        norm_type='batch', activation_fn=lrelu, name="fc"):
-    activation = slim.fully_connected(input, output_shape, activation_fn=activation_fn)
+    activation = slim.fully_connected(input, int(output_shape), activation_fn=activation_fn)
     output = norm(activation, norm_type, is_train)
     if info: log.info('{} {}'.format(name, output))
     return output
