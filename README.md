@@ -1,3 +1,7 @@
+# 
+conda activate batch_norm
+tensorboard --logdir /media/data/GitHub/Group-Normalization-Tensorflow/train_dir
+
 # Group Normalization
 
 As part of the implementation series of [Joseph Lim's group at USC](http://csail.mit.edu/~lim), our motivation is to accelerate (or sometimes delay) research in the AI community by promoting open-source projects. To this end, we implement state-of-the-art research papers, and publicly share them with concise reports. Please visit our [group github site](https://github.com/gitlimlab) for other projects.
